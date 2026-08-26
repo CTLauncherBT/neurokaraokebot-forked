@@ -1,9 +1,11 @@
 import json
 import random
+import enum
 from dataclasses import dataclass
 from logging.handlers import TimedRotatingFileHandler
 from logging import Formatter, LoggerAdapter
 import discord
+import config
 
 
 class MyTimedRotatingFileHandler(TimedRotatingFileHandler):
@@ -63,6 +65,55 @@ def author_check(owner_id: int):
         return not check
 
     return check_fun
+
+
+class CoverBy(enum.Enum):
+    Vedal = enum.auto()
+    Twins = enum.auto()
+    Neuro = enum.auto()
+    Evil = enum.auto()
+    Unknown = enum.auto()
+
+
+def parse_cover_by(cover_str: str) -> CoverBy:
+    cover_by = CoverBy.Unknown
+    if "Vedal" in cover_str:
+        cover_by = CoverBy.Vedal
+    elif "Neuro" in cover_str and "Evil" in cover_str:
+        cover_by = CoverBy.Twins
+    elif "Neuro" in cover_str:
+        cover_by = CoverBy.Neuro
+    elif "Evil" in cover_str:
+        cover_by = CoverBy.Evil
+    return cover_by
+
+
+def color_for_cover_artist(cover_str: str):
+    color = config.COLORS.EMBED_DEFAULT
+    match parse_cover_by(cover_str):
+        case CoverBy.Vedal:
+            color = config.COLORS.VEDAL
+        case CoverBy.Twins:
+            color = config.COLORS.TWINS
+        case CoverBy.Neuro:
+            color = config.COLORS.NEURO
+        case CoverBy.Evil:
+            color = config.COLORS.EVIL
+    return color
+
+
+def emote_for_cover_artist(cover_str: str):
+    emote_str = EMOTES.JAM
+    match parse_cover_by(cover_str):
+        case CoverBy.Vedal:
+            pass
+        case CoverBy.Twins:
+            emote_str = EMOTES.NEUROJAM + EMOTES.EVILJAM
+        case CoverBy.Neuro:
+            emote_str = EMOTES.NEUROJAM
+        case CoverBy.Evil:
+            emote_str = EMOTES.EVILJAM
+    return emote_str
 
 
 class EmotesMetaClass(type):

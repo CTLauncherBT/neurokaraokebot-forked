@@ -10,40 +10,16 @@ import logging
 import asyncio
 import time
 import typing
-import enum
-import datetime
 from itertools import chain, islice
 
 import player
 import stats
+import embeds
 from config import *
-from utils import EMOTES, CustomResponse, author_check
+from utils import EMOTES, CustomResponse, author_check, emote_for_cover_artist
 from song_lookup_view import SongLookupView, RequestButton, SetlistsView
 
 log = logging.getLogger()
-
-
-class CoverBy(enum.Enum):
-    Vedal = enum.auto()
-    Twins = enum.auto()
-    Neuro = enum.auto()
-    Evil = enum.auto()
-    Unknown = enum.auto()
-
-
-def parse_cover_by(cover_str: str) -> CoverBy:
-    if "Vedal" in cover_str:
-        return CoverBy.Vedal
-    elif "Neuro" in cover_str and "Evil" in cover_str:
-        return CoverBy.Twins
-    elif "Neuro" in cover_str:
-        return CoverBy.Neuro
-    elif "Evil" in cover_str:
-        return CoverBy.Evil
-    else:
-        if cover_str:
-            log.warning(f"parse_cover_by: error during parsing string - '{cover_str}'")
-        return CoverBy.Unknown
 
 
 class NotAllowedError(commands.CommandError):
@@ -263,21 +239,10 @@ class MusicCog(commands.Cog):
             footer = f'Requested by "{requested_by}"'
         if mp.is_paused():
             note = f"Ends `PAUSED` {EMOTES.PAUSE}"
-        embed, discord_file = await self.get_song_embed(
-            ctx.guild.id, current_song, note, footer, song_remaining
-        )
-        cover_str = current_song.cover_artists
-        cover_by = parse_cover_by(cover_str)
-        emote_str = EMOTES.JAM
-        match cover_by:
-            case CoverBy.Vedal:
-                pass
-            case CoverBy.Twins:
-                emote_str = EMOTES.NEUROJAM + EMOTES.EVILJAM
-            case CoverBy.Neuro:
-                emote_str = EMOTES.NEUROJAM
-            case CoverBy.Evil:
-                emote_str = EMOTES.EVILJAM
+        cover_art = await current_song.get_cover_art(True, self.bot.session)
+        embed = embeds.get_song_embed(ctx.guild.id, current_song, note, cover_art, footer, True)
+        discord_file = cover_art if isinstance(cover_art, discord.File) else None
+        emote_str = emote_for_cover_artist(current_song.cover_artists)
         try:
             msg = await ctx.reply(f"Playing right now {emote_str}", embed=embed, file=discord_file)
         except discord.errors.HTTPException as e:
@@ -290,50 +255,11 @@ class MusicCog(commands.Cog):
                 discord_file.close()
         if song_remaining is None:
             return
-        symbol = embed.description.rfind("🔘")
-        if symbol == -1:
-            return
         if radio_name is None:
             song_ref = weakref.ref(current_song)
         else:
             song_ref = lambda: current_song
-        self.bot.loop.create_task(self.update_embed(song_ref, msg, embed, symbol))
-
-    async def update_embed(
-        self,
-        song_ref: weakref.ReferenceType[player.Song],
-        msg: discord.Message,
-        embed: discord.Embed,
-        symbol: int,
-    ):
-        line_start = embed.description.rfind("\n", 0, symbol)
-        if line_start == -1:
-            return
-        line_end = embed.description.rfind("▬")
-        if line_end == -1:
-            return
-        if symbol > line_end:
-            line_end = symbol
-        description_end = embed.description[line_end + 1 :]
-        duration = song_ref().duration
-        for _ in range(1100):
-            await asyncio.sleep(1.6)
-            if (song := song_ref()) is not None:
-                remaining = song.remaining()
-                song = None
-            else:
-                return
-            if remaining is None:
-                return
-            pminutes, pseconds = divmod(round(duration - remaining), 60)
-            seg = int((remaining * 10) / duration)
-            embed.description = f"{embed.description[:line_start]}\n`{pminutes}:{pseconds:02} {'▬'*(10-seg)}🔘{'▬'*seg}{description_end}"
-            try:
-                await msg.edit(embed=embed)
-            except discord.NotFound:
-                return
-            if remaining <= 0:
-                return
+        self.bot.loop.create_task(embeds.update_embed(song_ref, msg, embed))
 
     @commands.command(priority=6, aliases=("ns",))
     @cmd_verify()
@@ -380,22 +306,14 @@ class MusicCog(commands.Cog):
         if mp.is_paused():
             note = f"Playing `PAUSED` {EMOTES.PAUSE}"
         if isinstance(next_song, player.Radio):
-            embed = self.get_radio_embed(next_song, note, footer)
+            embed = embeds.get_radio_embed(next_song, note, footer)
             emote_str = next_song.emote()
             discord_file = None
         else:
-            embed, discord_file = await self.get_song_embed(ctx.guild.id, next_song, note, footer)
-            cover_by = parse_cover_by(next_song.cover_artists)
-            emote_str = EMOTES.JAM
-            match cover_by:
-                case CoverBy.Vedal:
-                    pass
-                case CoverBy.Twins:
-                    emote_str = EMOTES.NEUROJAM + EMOTES.EVILJAM
-                case CoverBy.Neuro:
-                    emote_str = EMOTES.NEUROJAM
-                case CoverBy.Evil:
-                    emote_str = EMOTES.EVILJAM
+            cover_art = await next_song.get_cover_art(True, self.bot.session)
+            embed = embeds.get_song_embed(ctx.guild.id, next_song, note, cover_art, footer)
+            discord_file = cover_art if isinstance(cover_art, discord.File) else None
+            emote_str = emote_for_cover_artist(next_song.cover_artists)
         try:
             await ctx.reply(f"Next song: {emote_str}", embed=embed, file=discord_file)
         except discord.errors.HTTPException as e:
@@ -526,34 +444,36 @@ class MusicCog(commands.Cog):
                 f"Unable to fetch data from api.neurokaraoke.com {EMOTES.SAD}", ephemeral=True
             )
             return
-        embed, discord_file = await self.get_song_embed(interact.guild_id, player.Song(data[0]))
+        song = player.Song(data[0])
+        cover_art = await song.get_cover_art(True, self.bot.session)
+        embed = embeds.get_song_embed(interact.guild_id, song, cover_art=cover_art)
+        discord_file = cover_art if isinstance(cover_art, discord.File) else utils.MISSING
         vc = interact.guild.voice_client if interact.guild is not None else None
         view = utils.MISSING
         if vc and self.get_music_player(interact) and interact.channel.id == vc.channel.id:
             view = discord.ui.View(timeout=60)
             view.add_item(RequestButton(data[0]))
-
-            async def on_view_timeout():
-                if view.message:
-                    try:
-                        await view.message.edit(embed=embed, view=None)
-                    except discord.NotFound:
-                        pass
-
-            view.on_timeout = on_view_timeout
         try:
-            if discord_file is None:
-                discord_file = utils.MISSING
             await repl(embed=embed, view=view, file=discord_file)
         except discord.errors.HTTPException as e:
             if e.code == 40005:
                 await repl(embed=embed, view=view)
             else:
                 raise
-        if discord_file is not None and discord_file is not utils.MISSING:
-            discord_file.close()
+        finally:
+            if discord_file is not utils.MISSING:
+                discord_file.close()
         if view:
-            view.message = await interact.original_response()
+            message = await interact.original_response()
+
+            async def on_view_timeout():
+                if message:
+                    try:
+                        await message.edit(embed=embed, view=None)
+                    except discord.NotFound:
+                        pass
+
+            view.on_timeout = on_view_timeout
 
     @commands.command(priority=7)
     @cmd_verify()
@@ -1010,88 +930,6 @@ class MusicCog(commands.Cog):
         stats.cache_song(guild_id, song)
         mp.load_next_song()
         await self.play_current(vc)
-
-    async def get_song_embed(
-        self,
-        guild_id: int,
-        song: player.Song,
-        last_section: str | None = None,
-        footer: str | None = None,
-        remaining: int = None,
-    ):
-        original_by = song.original_artists
-        date = song.song_info.get("streamDate")
-        if not date:
-            date = song.song_info.get("karaokeDate")
-        if date:
-            date = datetime.datetime.fromisoformat(date).strftime("%B %d, %Y")
-        duration = song.duration or 0
-        minutes, seconds = divmod(round(duration), 60)
-        song_url = song.get_url()
-        cover_str = song.cover_artists
-        cover_by = parse_cover_by(cover_str)
-        color = COLORS.EMBED_DEFAULT
-        match cover_by:
-            case CoverBy.Vedal:
-                color = COLORS.VEDAL
-            case CoverBy.Twins:
-                color = COLORS.TWINS
-            case CoverBy.Neuro:
-                color = COLORS.NEURO
-            case CoverBy.Evil:
-                color = COLORS.EVIL
-        song_data = stats.get_songs_cache(guild_id).get(song.get_id(), {})
-        play_count = song_data.get(stats.DataType.SongCount, 0)
-        req_count = song_data.get(stats.DataType.Request, 0)
-        song_name = song.song_name()
-        description_lines = []
-        if cover_str:
-            description_lines = [f"Cover by {cover_str}\n"]
-        description_lines.append(f"Original by {original_by}\n")
-        if date:
-            description_lines.append(f"Stream date: {date}")
-        if remaining and duration != 0:
-            pminutes, pseconds = divmod(round(duration - remaining), 60)
-            seg = int((remaining * 10) / duration)
-            description_lines.append(
-                f"`{pminutes}:{pseconds:02} {'▬'*(10-seg)}🔘{'▬'*seg} {minutes}:{seconds:02}`"
-            )
-        else:
-            description_lines.append(f"Duration: {minutes}:{seconds:02}")
-
-        description_lines.append(f"{play_count} plays    {req_count} requests")
-        if last_section:
-            description_lines.append(f"\n{last_section}")
-        description = "\n".join(description_lines)
-        embed = discord.Embed(title=song_name, description=description, color=color, url=song_url)
-        discord_file = None
-        image_data = await song.get_cover_art(True, self.bot.session)
-        if image_data:
-            if type(image_data) is str:
-                embed.set_thumbnail(url=image_data)
-            elif type(image_data) is discord.File:
-                embed.set_thumbnail(url=image_data.uri)
-                discord_file = image_data
-            else:
-                log.error(
-                    f"get_song_embed: got unknown data type for song cover: {type(image_data)}"
-                )
-
-        embed.set_footer(text=footer)
-        return embed, discord_file
-
-    @staticmethod
-    def get_radio_embed(
-        radio: player.Radio,
-        last_section: str | None = None,
-        footer: str | None = None,
-    ):
-        embed = discord.Embed(
-            title=radio.name(), description=last_section, color=radio.color(), url=radio.get_url()
-        )
-        embed.set_thumbnail(url=radio.logo_url())
-        embed.set_footer(text=footer)
-        return embed
 
     def get_members_listening(self, channel: discord.VoiceChannel) -> set[int]:
         return {
