@@ -247,12 +247,12 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
         selected_song = player.Song(selected_song_data)
         song_name = selected_song.song_name()
         songs_list[song_name] = SongName(
-            app_commands.Choice(name=song_name, value=song_name), song_name.lower()
+            app_commands.Choice(name=song_name[:100], value=song_name[:100]), song_name.lower()
         )
         for song_data in response.json_data:
             song_name = player.Song(song_data).song_name()
             songs_list[song_name] = SongName(
-                app_commands.Choice(name=song_name, value=song_name), song_name.lower()
+                app_commands.Choice(name=song_name[:100], value=song_name[:100]), song_name.lower()
             )
             if len(songs_list) >= self.NUM_OF_CHOICES:
                 break

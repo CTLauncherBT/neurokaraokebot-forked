@@ -1156,7 +1156,9 @@ class MusicCog(commands.Cog):
                 listening = self.get_members_listening(after.channel)
                 stats.update(member.guild.id, mp.current_song, listening)
                 if mp.update_status:
-                    self.set_voice_status(after.channel, mp.current_song.song_name(), mp.is_paused())
+                    await self.set_voice_status(
+                        after.channel, mp.current_song.song_name(), mp.is_paused()
+                    )
             elif before.mute != after.mute:
                 guild_id = before.channel.guild.id
                 mp = self.music_players.get(guild_id)
