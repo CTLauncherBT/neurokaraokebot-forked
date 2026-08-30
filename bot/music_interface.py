@@ -53,6 +53,7 @@ class MusicCog(commands.Cog):
         self.check_alone_status.start()
         self.voice_statuses = {}
         self.error_time = {}
+        self.connecting_to = {}
         if os.getenv("API_KEY") is None:
             self.favorite.enabled = False
 
@@ -70,6 +71,9 @@ class MusicCog(commands.Cog):
         if interact.guild.voice_client:
             await repl(f"Bot already in VC {EMOTES.SILLY}", ephemeral=True)
             return
+        if self.connecting_to.get(interact.guild.id):
+            await repl(f"Bot already connecting to VC in this guild {EMOTES.SILLY}", ephemeral=True)
+            return
         voice = interact.user.voice
         if voice is None or voice.channel is None:
             await repl(f"You have to be in a VC {EMOTES.SILLY}", ephemeral=True)
@@ -84,23 +88,28 @@ class MusicCog(commands.Cog):
         if last_error > time.time():
             diff = last_error - time.time()
             await repl(
-                f"There has been an error {EMOTES.SAD}, try again in {diff:.1f}s", ephemeral=True
+                f"There has been an error recently {EMOTES.SAD}, try again in {diff:.1f}s",
+                ephemeral=True,
             )
             return
         channel = voice.channel
         await interact.response.defer()
         repl = interact.followup.send
         try:
+            self.connecting_to[interact.guild.id] = True
             await channel.connect(reconnect=False, timeout=10)
             try:
                 await repl(f"Starting Neuro Karaoke Playback in {channel.mention} {EMOTES.HAPPY}")
             except Exception:
                 pass
-            await self.start(channel)
         except TimeoutError:
             await repl(
                 f"Connection timeout {EMOTES.SAD}, try again in a minute or two", ephemeral=True
             )
+        else:
+            await self.start(channel)
+        finally:
+            self.connecting_to[interact.guild.id] = False
 
     @commands.command(priority=1)
     @cmd_verify()
@@ -157,6 +166,9 @@ class MusicCog(commands.Cog):
         ):
             await ctx.reply("You can only use this command in VC with the bot", delete_after=10)
             return
+        if self.connecting_to.get(ctx.guild.id):
+            await ctx.reply("Bot currently trying to connect, please wait a little", delete_after=10)
+            return
         mp = self.get_music_player(ctx)
         self.music_players[ctx.guild.id] = None
         if mp:
@@ -170,8 +182,15 @@ class MusicCog(commands.Cog):
         elif vc := ctx.me.voice:
             await ctx.guild.change_voice_state(channel=None)
         await asyncio.sleep(3)
-        await channel.connect(reconnect=False)
-        await self.start(channel)
+        try:
+            self.connecting_to[ctx.guild.id] = True
+            await channel.connect(reconnect=False, timeout=10)
+        except TimeoutError:
+            await ctx.reply(f"Connection timeout {EMOTES.SAD}, try again in a minute or two")
+        else:
+            await self.start(channel)
+        finally:
+            self.connecting_to[ctx.guild.id] = False
 
     @commands.command(priority=8)
     @cmd_verify()
@@ -892,6 +911,7 @@ class MusicCog(commands.Cog):
         if error:
             log.error(f"Error during playback: {error}, server id: {guild_id}")
         if (self.error_time.get(guild_id, 0) + 5) > time.time():
+            log.warning("Stopping playback_end from continuing due to error_time")
             return
         future = asyncio.run_coroutine_threadsafe(self.next_song(guild_id), self.bot.loop)
         future.add_done_callback(self.scheduled_task_done)
@@ -965,11 +985,20 @@ class MusicCog(commands.Cog):
                     return
                 was_paused = mp.is_paused()
                 mp.pause()
+                if self.connecting_to.get(guild_id):
+                    return
                 log.warning("Detected active playback, attempting to resume")
                 await asyncio.sleep(1)
                 if member.guild.voice_client or (member.voice and member.voice.channel):
                     log.warning("Already connected to voice?")
-                vc = await before.channel.connect(reconnect=False)
+                try:
+                    self.connecting_to[guild_id] = True
+                    vc = await before.channel.connect(reconnect=False, timeout=10)
+                except Exception as e:
+                    log.warning(f"on_voice_state_update: Exception during reconnect ({e})")
+                    return
+                finally:
+                    self.connecting_to[guild_id] = False
                 # We use play_current so it will continue playing the song
                 # Even if alone_counter is met, we need to start playback to put it in valid vc state
                 # since the MusicPlayer is paused, it will send silence anyway
