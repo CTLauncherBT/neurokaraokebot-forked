@@ -203,7 +203,7 @@ class EMOTES(metaclass=EmotesMetaClass):
     SWARMFM_LIST: list[str] = []
     NEUROKARAOKE_LIST: list[str] = []
     DINKDONK_LIST: list[str] = []
-    _filename = "data/emotes.json"
+    _filename = None
 
     @staticmethod
     def groups() -> list[str]:
@@ -244,13 +244,17 @@ class EMOTES(metaclass=EmotesMetaClass):
             raise ValueError(f"Group '{group_name}' is invalid or read-only.")
 
     @classmethod
-    def load(cls):
+    def load(cls, filename: str):
+        if cls._filename is None:
+            cls._filename = filename
         try:
-            with open(cls._filename, "r") as f:
+            with open(filename, "r") as f:
                 raw = json.load(f).get("EMOTES", {})
                 mapped = {f"{k}_LIST": v for k, v in raw.items()}
                 for key, value in mapped.items():
                     setattr(cls, key, value)
+        except FileNotFoundError:
+            print(f"Emotes configuration not found ({filename})")
         except Exception as e:
             print(e)
 

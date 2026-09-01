@@ -11,6 +11,7 @@ from discord import Intents, Interaction, InteractionType, app_commands
 from discord.ext import commands
 
 import stats
+import embeds
 from music_interface import MusicCog, NotAllowedError
 from owner_interface import OwnerCog
 from utility_interface import UtilityCog
@@ -171,8 +172,9 @@ class MyBot(commands.Bot):
 
 os.makedirs("logs", exist_ok=True)
 os.makedirs("data", exist_ok=True)
-stats.load()
-EMOTES.load()
+stats.load("data/stats.json")
+EMOTES.load("data/emotes.json")
+embeds.load("data/progressbar.json")
 handler = MyTimedRotatingFileHandler("logs/current.log", "midnight", 1, 30, "utf-8")
 bot = MyBot()
 print(f"Starting up {datetime.now()}")

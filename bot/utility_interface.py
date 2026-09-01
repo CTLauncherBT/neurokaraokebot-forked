@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import typing
 from heapq import nlargest
@@ -7,6 +6,7 @@ from discord.ext import commands
 from discord import app_commands, ui, utils
 
 import stats
+import embeds
 import player
 from config import API
 from utils import CustomResponse, EMOTES
@@ -150,27 +150,36 @@ class StatsCog(commands.GroupCog, group_name="stats"):
                 continue
             if top_song is None or top_song[1] < count:
                 top_song = (song_id, count)
-        embeds = [stats_embed]
+        embeds_list = [stats_embed]
         discord_file = utils.MISSING
         if top_song and not global_stats:
             resp: CustomResponse = await interact.client.fetch_json_data(
                 f"{API.SONGS}/{top_song[0]}"
             )
             if resp.error or resp.status != 200 or not isinstance(resp.json_data, dict):
-                embeds.append(
+                embeds_list.append(
                     discord.Embed(
                         description=f"Could not get data for the most requested song {EMOTES.SAD}"
                     )
                 )
             else:
                 song = player.Song(resp.json_data)
-                song_embed, discord_file = await music_cog.get_song_embed(
-                    interact.guild_id, song, None, f"Most requested song ({top_song[1]} times)"
-                )
-                if discord_file is None:
-                    discord_file = utils.MISSING
-                embeds.append(song_embed)
-        await interact.followup.send(embeds=embeds, file=discord_file)
+                cover_art = await song.get_cover_art(True, interact.client.session)
+                footer = f"Most requested song ({top_song[1]} times)"
+                song_embed = embeds.get_song_embed(interact.guild_id, song, None, cover_art, footer)
+                embeds_list.append(song_embed)
+                if cover_art is discord.File:
+                    discord_file = cover_art
+        try:
+            await interact.followup.send(embeds=embeds_list, file=discord_file)
+        except discord.errors.HTTPException as e:
+            if e.code == 40005:
+                await interact.followup.send(embeds=embeds_list)
+            else:
+                raise
+        finally:
+            if discord_file is discord.File:
+                discord_file.close()
 
     @app_commands.command()
     async def server(self, interact: discord.Interaction):
@@ -282,12 +291,8 @@ class StatsCog(commands.GroupCog, group_name="stats"):
                 )
                 return
             if not isinstance(result.json_data, list):
-                await reply(
-                    f"Could not get data for songs, Got wrong result. {EMOTES.SAD}"
-                )
-                log.warning(
-                    f"send_song_list: Payload {song_ids}, response: {result.json_data}"
-                )
+                await reply(f"Could not get data for songs, Got wrong result. {EMOTES.SAD}")
+                log.warning(f"send_song_list: Payload {song_ids}, response: {result.json_data}")
                 return
             for song_data in result.json_data:
                 c_song_id = song_data["id"]

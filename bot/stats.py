@@ -4,7 +4,7 @@ import json
 import logging
 from player import Radio, Song
 
-_stats_filename = "data/stats.json"
+_stats_filename = None
 _log = logging.getLogger()
 
 
@@ -72,13 +72,17 @@ _cache_data: dict[str, dict] = {}
 _final = False
 
 
-def load():
+def load(filename: str):
+    global _stats_filename, _cache_data
+    if _stats_filename is None:
+        _stats_filename = filename
     try:
-        with open(_stats_filename, "r") as f:
-            global _cache_data
+        with open(filename, "r") as f:
             _cache_data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        _log.warning(f"Could not load stats data: {e}")
+    except FileNotFoundError:
+        print(f"Stats data not found, running for the first time? ({filename})")
+    except Exception as e:
+        print(f"Could not load stats data: {e}")
 
 
 def save(final=False):

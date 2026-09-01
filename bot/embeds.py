@@ -1,4 +1,4 @@
-import enum
+import json
 import logging
 import datetime
 import asyncio
@@ -10,6 +10,33 @@ import stats
 import utils
 
 log = logging.getLogger()
+# progressbar lenght
+pg_lenght = 12
+progressbar_data: dict = None
+
+
+class EmbedEx(discord.Embed):
+    def __init__(
+        self,
+        *,
+        colour=None,
+        color=None,
+        title=None,
+        type="rich",
+        url=None,
+        description=None,
+        timestamp=None,
+    ):
+        super().__init__(
+            colour=colour,
+            color=color,
+            title=title,
+            type=type,
+            url=url,
+            description=description,
+            timestamp=timestamp,
+        )
+        self.progressbar_pos: int | None = None
 
 
 def get_song_embed(
@@ -19,7 +46,7 @@ def get_song_embed(
     cover_art: str | discord.File = None,
     footer: str = None,
     show_progressbar=False,
-) -> discord.Embed:
+) -> EmbedEx:
 
     original_by = song.original_artists
     date = song.song_info.get("streamDate")
@@ -45,16 +72,22 @@ def get_song_embed(
     remaining = song.remaining()
     if show_progressbar and remaining is not None and duration != 0:
         pminutes, pseconds = divmod(round(duration - remaining), 60)
-        bar = get_progressbar((duration - remaining) / duration, 10)
-        description_lines.append(f"`{pminutes}:{pseconds:02} {bar} {minutes}:{seconds:02}`")
+        bar = get_progressbar((duration - remaining) / duration, pg_lenght)
+        progressbar_pos = sum(len(text) for text in description_lines) + len(description_lines)
+        if len(bar) == pg_lenght:
+            description_lines.append(f"`{pminutes}:{pseconds:02} {bar} {minutes}:{seconds:02}`")
+        else:
+            description_lines.append(f"`{pminutes}:{pseconds:02}` {bar} `{minutes}:{seconds:02}`")
     else:
         description_lines.append(f"Duration: {minutes}:{seconds:02}")
+        progressbar_pos = None
 
     description_lines.append(f"{play_count} plays    {req_count} requests")
     if last_section:
         description_lines.append(f"\n{last_section}")
     description = "\n".join(description_lines)
-    embed = discord.Embed(title=song_name, description=description, color=color, url=song_url)
+    embed = EmbedEx(title=song_name, description=description, color=color, url=song_url)
+    embed.progressbar_pos = progressbar_pos
     embed.set_footer(text=footer)
     if cover_art:
         if type(cover_art) is str:
@@ -78,19 +111,21 @@ def get_radio_embed(
 
 
 async def update_embed(
-    song_ref: weakref.ReferenceType[player.Song], msg: discord.Message, embed: discord.Embed
+    song_ref: weakref.ReferenceType[player.Song], msg: discord.Message, embed: EmbedEx
 ):
-    symbol = embed.description.rfind("🔘")
-    line_start = embed.description.rfind("\n", 0, symbol)
-    if line_start == -1:
+    progressbar_start = embed.progressbar_pos
+    if progressbar_start is None:
         return
-    line_end = embed.description.rfind("▬")
+    line_end = embed.description.find("\n", progressbar_start + 5)
     if line_end == -1:
         return
-    if symbol > line_end:
-        line_end = symbol
-    description_end = embed.description[line_end + 1 :]
+    line_end = embed.description.rfind(" ", progressbar_start, line_end)
+    if line_end == -1:
+        return
+    description_end = embed.description[line_end:]
     duration = song_ref().duration
+    if duration is None or duration == 0:
+        return
     for _ in range(1100):
         await asyncio.sleep(1.6)
         if (song := song_ref()) is not None:
@@ -101,10 +136,11 @@ async def update_embed(
         if remaining is None:
             return
         pminutes, pseconds = divmod(round(duration - remaining), 60)
-        bar = get_progressbar((duration - remaining) / duration, 10)
-        embed.description = (
-            f"{embed.description[:line_start]}\n`{pminutes}:{pseconds:02} {bar}{description_end}"
-        )
+        bar = get_progressbar((duration - remaining) / duration, pg_lenght)
+        if len(bar) == pg_lenght:
+            embed.description = f"{embed.description[:progressbar_start]}`{pminutes}:{pseconds:02} {bar}{description_end}"
+        else:
+            embed.description = f"{embed.description[:progressbar_start]}`{pminutes}:{pseconds:02}` {bar}{description_end}"
         try:
             await msg.edit(embed=embed)
         except discord.NotFound:
@@ -114,7 +150,67 @@ async def update_embed(
 
 
 def get_progressbar(percent: float, lenght: int):
+    position = max(0, min(int(lenght * percent), lenght - 1))
+    pb_data = progressbar_data.get("default")
+    try:
+        segments = []
+        get_full = lambda a: max(pb_data.get(a), key=lambda x: x["percent"])
+        get_empty = lambda a: min(pb_data.get(a), key=lambda x: x["percent"])
+        get_specific = lambda a, b: max(
+            (item for item in pb_data.get(a) if item["percent"] / 100 <= b),
+            key=lambda x: x["percent"],
+        )
+        if position == 0 and "start" in pb_data:
+            result = get_specific("start", percent)
+            segments.append(result["emote"])
+            middle_empty = get_empty("middle")
+            if "end" in pb_data:
+                segments.extend(middle_empty["emote"] * (lenght - 2))
+                end_empty = get_empty("end")
+                segments.append(end_empty["emote"])
+            else:
+                segments.extend(middle_empty["emote"] * (lenght - 1))
+        elif position == lenght - 1 and "end" in pb_data:
+            if "start" in pb_data:
+                segments.append(get_full("start")["emote"])
+            to_fill = lenght - 1 - len(segments)
+            middle_full = get_full("middle")
+            segments.extend(middle_full["emote"] * to_fill)
+            tile_percent = percent * lenght - position
+            result = get_specific("end", tile_percent)
+            segments.append(result["emote"])
+        else:
+            if "start" in pb_data:
+                segments.append(get_full("start")["emote"])
+            to_fill = position - len(segments)
+            segments.extend(get_full("middle")["emote"] * to_fill)
+            tile_percent = percent * lenght - position
+            result = get_specific("middle", tile_percent)
+            segments.append(result["emote"])
+            middle_empty = get_empty("middle")
+            if "end" in pb_data:
+                segments.extend(middle_empty["emote"] * (lenght - position - 2))
+                end_empty = get_empty("end")
+                segments.append(end_empty["emote"])
+            else:
+                segments.extend(middle_empty["emote"] * (lenght - position - 1))
+        return "".join(segments)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        log.exception("")
     segments = ["▬"] * lenght
     position = max(0, min(int(lenght * percent), lenght - 1))
     segments[position] = "🔘"
     return "".join(segments)
+
+
+def load(filename: str = None):
+    global progressbar_data
+    try:
+        with open(filename) as f:
+            progressbar_data = json.load(f)
+    except FileNotFoundError:
+        print(f"Progressbar configuration not found ({filename})")
+    except Exception as e:
+        print(e)
