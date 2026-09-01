@@ -72,7 +72,8 @@ def get_song_embed(
     remaining = song.remaining()
     if show_progressbar and remaining is not None and duration != 0:
         pminutes, pseconds = divmod(round(duration - remaining), 60)
-        bar = get_progressbar((duration - remaining) / duration, pg_lenght)
+
+        bar = get_progressbar((duration - remaining) / duration, pg_lenght, song.cover_by())
         progressbar_pos = sum(len(text) for text in description_lines) + len(description_lines)
         if len(bar) == pg_lenght:
             description_lines.append(f"`{pminutes}:{pseconds:02} {bar} {minutes}:{seconds:02}`")
@@ -130,13 +131,13 @@ async def update_embed(
         await asyncio.sleep(1.6)
         if (song := song_ref()) is not None:
             remaining = song.remaining()
-            song = None
         else:
             return
         if remaining is None:
             return
         pminutes, pseconds = divmod(round(duration - remaining), 60)
-        bar = get_progressbar((duration - remaining) / duration, pg_lenght)
+        bar = get_progressbar((duration - remaining) / duration, pg_lenght, song.cover_by())
+        song = None
         if len(bar) == pg_lenght:
             embed.description = f"{embed.description[:progressbar_start]}`{pminutes}:{pseconds:02} {bar}{description_end}"
         else:
@@ -149,9 +150,13 @@ async def update_embed(
             return
 
 
-def get_progressbar(percent: float, lenght: int):
+def get_progressbar(percent: float, lenght: int, cover_by=utils.CoverBy.Unknown):
     position = max(0, min(int(lenght * percent), lenght - 1))
     pb_data = progressbar_data.get("default")
+    if cover_by.name in progressbar_data:
+        pb_data = progressbar_data[cover_by.name]
+    else:
+        pb_data = progressbar_data.get("default")
     try:
         segments = []
         get_full = lambda a: max(pb_data.get(a), key=lambda x: x["percent"])

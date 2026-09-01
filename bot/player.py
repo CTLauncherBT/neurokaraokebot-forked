@@ -11,7 +11,7 @@ from collections import deque
 from itertools import chain, islice
 from config import *
 from playback_source import *
-from utils import EMOTES
+from utils import EMOTES, CoverBy, parse_cover_by
 
 log = logging.getLogger()
 MODE = 1
@@ -151,6 +151,9 @@ class Song:
 
         image_url += "/quality=90"
         return image_url
+
+    def cover_by(self) -> CoverBy:
+        return parse_cover_by(self.cover_artists)
 
 
 class RadioSong(Song):
