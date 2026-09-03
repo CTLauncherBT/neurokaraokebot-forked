@@ -12,7 +12,7 @@ import utils
 log = logging.getLogger()
 # progressbar lenght
 pg_lenght = 12
-progressbar_data: dict = None
+progressbar_data: dict[str, dict[str, str]] = None
 
 
 class EmbedEx(discord.Embed):
@@ -152,58 +152,47 @@ async def update_embed(
 
 def get_progressbar(percent: float, lenght: int, cover_by=utils.CoverBy.Unknown):
     position = max(0, min(int(lenght * percent), lenght - 1))
-    pb_data = progressbar_data.get("default")
-    if cover_by.name in progressbar_data:
-        pb_data = progressbar_data[cover_by.name]
-    else:
+    if progressbar_data is not None:
         pb_data = progressbar_data.get("default")
-    try:
-        segments = []
-        get_full = lambda a: max(pb_data.get(a), key=lambda x: x["percent"])
-        get_empty = lambda a: min(pb_data.get(a), key=lambda x: x["percent"])
-        get_specific = lambda a, b: max(
-            (item for item in pb_data.get(a) if item["percent"] / 100 <= b),
-            key=lambda x: x["percent"],
-        )
-        if position == 0 and "start" in pb_data:
-            result = get_specific("start", percent)
-            segments.append(result["emote"])
-            middle_empty = get_empty("middle")
-            if "end" in pb_data:
-                segments.extend(middle_empty["emote"] * (lenght - 2))
-                end_empty = get_empty("end")
-                segments.append(end_empty["emote"])
+        if cover_by.name in progressbar_data:
+            pb_data = progressbar_data[cover_by.name]
+        try:
+            segments = []
+            get_full = lambda a: pb_data[a][max(pb_data[a], key=float)]
+            get_empty = lambda a: pb_data[a][min(pb_data[a], key=float)]
+            get_specific = lambda a, b: pb_data[a][
+                max((item for item in pb_data[a] if float(item) / 100 <= b), key=float)
+            ]
+            if position == 0 and "start" in pb_data:
+                segments.append(get_specific("start", percent))
+                if "end" in pb_data:
+                    segments.extend(get_empty("middle") * (lenght - 2))
+                    segments.append(get_empty("end"))
+                else:
+                    segments.extend(get_empty("middle") * (lenght - 1))
+            elif position == lenght - 1 and "end" in pb_data:
+                if "start" in pb_data:
+                    segments.append(get_full("start"))
+                to_fill = lenght - 1 - len(segments)
+                segments.extend(get_full("middle") * to_fill)
+                tile_percent = percent * lenght - position
+                segments.append(get_specific("end", tile_percent))
             else:
-                segments.extend(middle_empty["emote"] * (lenght - 1))
-        elif position == lenght - 1 and "end" in pb_data:
-            if "start" in pb_data:
-                segments.append(get_full("start")["emote"])
-            to_fill = lenght - 1 - len(segments)
-            middle_full = get_full("middle")
-            segments.extend(middle_full["emote"] * to_fill)
-            tile_percent = percent * lenght - position
-            result = get_specific("end", tile_percent)
-            segments.append(result["emote"])
-        else:
-            if "start" in pb_data:
-                segments.append(get_full("start")["emote"])
-            to_fill = position - len(segments)
-            segments.extend(get_full("middle")["emote"] * to_fill)
-            tile_percent = percent * lenght - position
-            result = get_specific("middle", tile_percent)
-            segments.append(result["emote"])
-            middle_empty = get_empty("middle")
-            if "end" in pb_data:
-                segments.extend(middle_empty["emote"] * (lenght - position - 2))
-                end_empty = get_empty("end")
-                segments.append(end_empty["emote"])
-            else:
-                segments.extend(middle_empty["emote"] * (lenght - position - 1))
-        return "".join(segments)
-    except FileNotFoundError:
-        pass
-    except Exception:
-        log.exception("")
+                if "start" in pb_data:
+                    segments.append(get_full("start"))
+                to_fill = position - len(segments)
+                segments.extend(get_full("middle") * to_fill)
+                tile_percent = percent * lenght - position
+                segments.append(get_specific("middle", tile_percent))
+                if "end" in pb_data:
+                    segments.extend(get_empty("middle") * (lenght - position - 2))
+                    segments.append(get_empty("end"))
+                else:
+                    segments.extend(get_empty("middle") * (lenght - position - 1))
+            return "".join(segments)
+        except Exception:
+            log.exception("")
+
     segments = ["▬"] * lenght
     position = max(0, min(int(lenght * percent), lenght - 1))
     segments[position] = "🔘"
@@ -217,5 +206,3 @@ def load(filename: str = None):
             progressbar_data = json.load(f)
     except FileNotFoundError:
         print(f"Progressbar configuration not found ({filename})")
-    except Exception as e:
-        print(e)

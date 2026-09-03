@@ -995,7 +995,7 @@ class MusicCog(commands.Cog):
                     self.connecting_to[guild_id] = True
                     vc = await before.channel.connect(reconnect=False, timeout=10)
                 except Exception as e:
-                    log.warning(f"on_voice_state_update: Exception during reconnect ({e})")
+                    log.warning(f"on_voice_state_update: Exception during reconnect ({type(e).__name__}: {e})")
                     return
                 finally:
                     self.connecting_to[guild_id] = False
