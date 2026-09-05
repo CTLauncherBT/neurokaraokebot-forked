@@ -116,8 +116,7 @@ class StatsCog(commands.GroupCog, group_name="stats"):
             await self.server.callback(self, interact)
             return
         await interact.response.defer(thinking=True)
-        music_cog = interact.client.get_cog("MusicCog")
-        music_cog.update_stats(interact.guild_id)
+        interact.client.get_cog("MusicCog").update_stats(interact.guild_id)
         listening_time = stats.get_user_current_time(interact.guild_id, user.id)
         request_num = 0
         songs_listened_to = 0

@@ -13,6 +13,7 @@ from discord.ext import commands
 from discord import app_commands, ui, utils
 
 import player
+import embeds
 import stats
 from config import API, STORAGE
 from utils import CustomResponse, verify_message, EMOTES
@@ -35,7 +36,7 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
     TIMEOUTS = [60, 70, 80, 100, 120]
     TIMES = [3, 6, 15, 30, 60]
     REWARDS = [1000, 500, 200, 100, 50]
-    NUM_OF_CHOICES = 20  # should not be more then 40, just to be safe
+    NUM_OF_CHOICES = 25  # should not be more then 40, just to be safe
     DEFAULT_LIST = [app_commands.Choice(name="start", value="start")]
 
     async def song_autocomplete(
@@ -51,7 +52,14 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
         for data in game.options.values():
             if current in data.lower:
                 matches.append(data.choice)
+            if len(matches) == 25:
+                break
         return matches
+
+    @commands.command(name="guesssong")
+    async def guesssong_text(self, ctx: commands.Context):
+        """Bandle minigame, Guess the name of the song"""
+        await self.start(ctx)
 
     @app_commands.command()
     @app_commands.guild_only()
@@ -60,7 +68,8 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
     async def guesssong(self, interact: discord.Interaction, song_name: str):
         """Bandle minigame, Guess the name of the song"""
         if song_name == "start":
-            await self.start(interact)
+            ctx = await interact.client.get_context(interact)
+            await self.start(ctx)
         else:
             await self.answer(interact, song_name)
 
@@ -133,14 +142,11 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
                 button.callback = self.button_get_more_time
             view.add_item(button)
         try:
-            ins = inspect.signature(method)
             msg = f"Guess this song using `/guesssong [name]`\nTimeout <t:{int(time.time()+self.TIMEOUTS[game.state])}:R>"
-            if "wait" in ins.parameters:
-                return await method(msg, file=discord_file, view=view, wait=True)
+            if "file" in inspect.signature(method).parameters:
+                return await method(msg, file=discord_file, view=view)
             else:  # edit
-                attachments = utils.MISSING
-                if discord_file:
-                    attachments = [discord_file]
+                attachments = [discord_file] if discord_file else utils.MISSING
                 return await method(content=msg, attachments=attachments, view=view)
         except Exception:
             raise
@@ -172,8 +178,7 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
     async def end_game(self, user_id, result: GameResult):
         game = self.guesssong_data.pop(user_id)
         try:
-            embed_file = None
-            music_file = None
+            files = None
             guild_id = game.message.guild.id
             match result:
                 case self.GameResult.WIN:
@@ -184,8 +189,8 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
                     msg = f"{EMOTES.SILLY} Wrong <@{user_id}>\nThe answer was:"
                 case self.GameResult.TIMEOUT:
                     msg = f"Times up <@{user_id}>{EMOTES.SIDE_EYE}\nThe answer was:"
-            music_cog = self.bot.get_cog("MusicCog")
-            embed, embed_file = await music_cog.get_song_embed(guild_id, game.correct_song)
+            cover_art = await game.correct_song.get_cover_art()
+            embed = embeds.get_song_embed(guild_id, game.correct_song, cover_art=cover_art)
             game.audio.file_buffer.seek(0)
             filename = re.sub(
                 r"[^\w\-_ .!,`~'@#$;%^&+=(){}\[\]]", " ", game.correct_song.song_name()
@@ -193,31 +198,30 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
             filename += ".ogg"
             music_file = discord.File(game.audio.file_buffer, filename)
             files = [music_file]
-            if embed_file is not None:
-                files.append(embed_file)
+            if isinstance(cover_art, discord.File):
+                files.append(cover_art)
             await game.message.reply(msg, embed=embed, files=files)
         except Exception:
             log.exception("end_game: ")
         finally:
+            if files:
+                for file in files:
+                    file.close()
             game.message = None
-            if embed_file is not None:
-                embed_file.close()
-            if music_file is not None:
-                music_file.close()
             game.audio.close()
 
-    async def start(self, interact: discord.Interaction):
-        current_game = self.guesssong_data.get(interact.user.id)
+    async def start(self, ctx: commands.Context):
+        current_game = self.guesssong_data.get(ctx.author.id)
         if current_game is not None:
             message_link = current_game.message.jump_url if current_game.message else None
-            await interact.response.send_message(
+            await ctx.reply(
                 f"You still have active game {message_link} {EMOTES.SIDE_EYE}",
                 ephemeral=True,
             )
             return
-        await interact.response.defer(thinking=True)
-        reply = interact.followup.send
-        response: CustomResponse = await interact.client.fetch_json_data(API.RANDOM)
+        await ctx.defer()
+        reply = ctx.send
+        response: CustomResponse = await ctx.bot.fetch_json_data(API.RANDOM)
         if response.error:
             await reply(
                 f"Could not get data from neurokaraoke.com {EMOTES.SAD}\n(`{response.error}`)",
@@ -265,7 +269,7 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
         list_to_shuffle = list(songs_list.items())
         random.shuffle(list_to_shuffle)
         songs_list = dict(list_to_shuffle)
-        session: aiohttp.ClientSession = interact.client.session
+        session: aiohttp.ClientSession = ctx.bot.session
         try:
             audio_url = STORAGE.STORAGE + opus_path.strip("/")
             async with session.get(audio_url) as resp:
@@ -281,17 +285,15 @@ class GuessSongCog(commands.Cog, group_name="guesssong"):
             )
             return
         new_game = self.guesssong_data.setdefault(
-            interact.user.id,
+            ctx.author.id,
             GuessSongData(None, time.time(), audio_source, songs_list, selected_song),
         )
-        message = await self.update_game_message(reply, interact.user.id)
+        message = await self.update_game_message(reply, ctx.author.id)
         new_game.last_action = time.time()
-        task = interact.client.loop.create_task(
-            self.game_timeout(self.TIMEOUTS[0], interact.user.id)
-        )
+        task = ctx.bot.loop.create_task(self.game_timeout(self.TIMEOUTS[0], ctx.author.id))
         task.add_done_callback(self.scheduled_task_done)
         if message is not None:
-            message.guild = interact.guild
+            message.guild = ctx.guild
             new_game.message = message
 
     async def answer(self, interact: discord.Interaction, song_name: str):
