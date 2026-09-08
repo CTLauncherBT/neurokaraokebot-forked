@@ -303,7 +303,7 @@ class OwnerCog(commands.Cog):
             status_display_type=discord.StatusDisplayType.state,
         )
         await self.bot.change_presence(activity=activity)
-        with open("data/activity_status.txt", "w") as f:
+        with open("data/activity_status.txt", "w", encoding="utf8") as f:
             f.write(status)
         await ctx.reply(f"Updated activity text to: `{status}`, it may take a moment to take effect")
 

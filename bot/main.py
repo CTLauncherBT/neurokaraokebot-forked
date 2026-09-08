@@ -26,7 +26,7 @@ class MyBot(commands.Bot):
         intents = Intents(guilds=True, message_content=True, voice_states=True, guild_messages=True)
         status = "Playing songs 🎵"
         try:
-            with open("data/activity_status.txt") as f:
+            with open("data/activity_status.txt", encoding="utf8") as f:
                 status = f.read()
             status = status.strip()
         except Exception:

@@ -202,7 +202,7 @@ def get_progressbar(percent: float, lenght: int, cover_by=utils.CoverBy.Unknown)
 def load(filename: str = None):
     global progressbar_data
     try:
-        with open(filename) as f:
+        with open(filename, encoding="utf8") as f:
             progressbar_data = json.load(f)
     except FileNotFoundError:
         print(f"Progressbar configuration not found ({filename})")
