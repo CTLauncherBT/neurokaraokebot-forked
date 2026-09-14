@@ -9,6 +9,8 @@ PAUSE_AFTER = 2
 PAUSE_DURATION = 3
 # Bitrate for the opus encoder (when applicable)
 OPUS_BITRATE = 128
+# Lenght (number of segments) in the progress bar displayed for current song embed
+PROGRESSBAR_LENGTH = 12
 
 
 # Url's for linking to the website

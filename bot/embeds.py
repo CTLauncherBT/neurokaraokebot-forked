@@ -8,10 +8,9 @@ import discord
 import player
 import stats
 import utils
+import config
 
 log = logging.getLogger()
-# progressbar lenght
-pg_lenght = 12
 progressbar_data: dict[str, dict[str, str]] = None
 
 
@@ -73,9 +72,11 @@ def get_song_embed(
     if show_progressbar and remaining is not None and duration != 0:
         pminutes, pseconds = divmod(round(duration - remaining), 60)
 
-        bar = get_progressbar((duration - remaining) / duration, pg_lenght, song.cover_by())
+        bar = get_progressbar(
+            (duration - remaining) / duration, config.PROGRESSBAR_LENGTH, song.cover_by()
+        )
         progressbar_pos = sum(len(text) for text in description_lines) + len(description_lines)
-        if len(bar) == pg_lenght:
+        if len(bar) == config.PROGRESSBAR_LENGTH:
             description_lines.append(f"`{pminutes}:{pseconds:02} {bar} {minutes}:{seconds:02}`")
         else:
             description_lines.append(f"`{pminutes}:{pseconds:02}` {bar} `{minutes}:{seconds:02}`")
@@ -136,9 +137,11 @@ async def update_embed(
         if remaining is None:
             return
         pminutes, pseconds = divmod(round(duration - remaining), 60)
-        bar = get_progressbar((duration - remaining) / duration, pg_lenght, song.cover_by())
+        bar = get_progressbar(
+            (duration - remaining) / duration, config.PROGRESSBAR_LENGTH, song.cover_by()
+        )
         song = None
-        if len(bar) == pg_lenght:
+        if len(bar) == config.PROGRESSBAR_LENGTH:
             embed.description = f"{embed.description[:progressbar_start]}`{pminutes}:{pseconds:02} {bar}{description_end}"
         else:
             embed.description = f"{embed.description[:progressbar_start]}`{pminutes}:{pseconds:02}` {bar}{description_end}"

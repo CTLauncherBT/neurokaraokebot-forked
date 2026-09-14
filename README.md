@@ -15,13 +15,13 @@ https://neurokaraoke.com/discord-bot
 
 * Create your bot on https://discord.com/developers/home
 * Make sure the "Message Content Intent" is enabled (for the text commands)
-* Set up your Python environment/docker (if desired)
+* Set up your Python environment/docker (if desired, recommended)
 * Clone/download repository
 * Install dependencies `pip install -r requirements.txt`
-* Create `.env` text file and put `BOT_TOKEN=[your bot token here]` inside (optionally token can also be pass in when starting the bot or put in system PATH etc.)
+* Create `.env` text file and put `BOT_TOKEN=[your bot token here]` inside (optionally token can also be passed in when starting the bot or put in system PATH etc.)
 * Start the bot `python main.py`
 * Sync slash commands using `!sync`, if you're setting up just one server you can use `local` option (note: using `global` option may take several minutes and should not be used too often or the discord may just ignore the request).
-Sync generally needs to be done once per bot. You may need to run it again after making any changes to the slash commands. It is recommenced to run `!sync global` first before inviting the bot to multiple servers.
+Sync generally needs to be done once per bot. You may need to run it again after making any changes to the slash commands. It is recommended to run `!sync global` first before inviting the bot to multiple servers.
 * (optional) Setup emotes for the bot to use: create `data/emotes.json` with the structure
   ```json
   {
@@ -45,13 +45,14 @@ Sync generally needs to be done once per bot. You may need to run it again after
     }
   }
   ```
-  And put your emotes in the discord format `"<(a):NAME:EMOTES_ID>"`, I recommend using application emotes, discord gives you 2k slots for that.
+  And put your emotes in the discord format `"<(a):NAME:EMOTE_ID>"`, I recommend using application emotes, discord gives you 2k slots for that.
   If you still want to use server emotes, keep in mind that bot can only use emotes from servers it is in and requires permissions to use emotes from different server it is currently in.
   Bot will use those emotes in various response messages
+* **(Optional) Setup Custom Progress Bars:** You can also fully customize the song progress bar embed with custom emotes. See the [Custom Progress Bar Guide](progressbar.md) for setup instructions.
 
 ---
 
-## Needed permission:
+## Needed permissions:
 
   * **Connect** - Joining voice channels
   * **Speak** - For being able to play music
@@ -95,9 +96,9 @@ Sync generally needs to be done once per bot. You may need to run it again after
 | `!issue` || Display common issues list | Yes |
 | `!setlistupdates` | `channel, "clear"` \| `ping role (optional` | Sets up new setlist notification (server owner only) | Yes |
 
-\* This command requires `API_KEY` in the .env file to function. Due to privacy reasons, this is kept secret by neurokaraoke owner, if not provided, the command will not work and not be listed in the commands list
+\* This command requires `API_KEY` in the .env file to function. Due to privacy reasons, this is kept secret by neurokaraoke owner, if not provided, the command will not work and will not be listed in the commands list
 
-\**\** General use commands that do not require you to be in a voice channel. Note: Behavior may vary slightly if used while connected to voice
+\*\* General use commands that do not require you to be in a voice channel. Note: Behavior may vary slightly if used while connected to voice
 
 #### **Bot owner commands:**
 | Command | Params | Description |
